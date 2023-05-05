@@ -1,0 +1,109 @@
+service: curbs
+frameworkVersion: '3.30.1'
+plugins:
+  - serverless-python-requirements
+provider:
+  name: aws
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  versionFunctions: false
+  runtime: python3.8
+  httpApi:
+    authorizers:
+      serviceAuthorizer:
+        identitySource: $request.header.Authorization
+        issuerUrl: ${param:users_authorizer_issuer_url}
+        audience: ${param:user_pool_client_arn}
+  environment:
+    CURBS_TABLE_NAME: ${self:custom.CURBS_TABLE_NAME}
+    USERS_HTTP_API_URL: ${cf:users-dev.HttpApiUrl}
+  iamRoleStatements:
+    - Effect: Allow
+      Action: 
+        - 'dynamodb:PutItem'
+        - 'dynamodb:Query'
+        - 'dynamodb:UpdateItem'
+        - 'dynamodb:DeleteItem'
+      Resource:
+        Fn::GetAtt: [CurbsDynamoDBTable, Arn]
+custom:
+  CURBS_TABLE_NAME: ${self:provider.stage}-${self:service}-curbs-table
+functions:
+  sign_up:
+    handler: src/functions/sign_up/handler.handler
+    events:
+      - httpApi:
+          path: /users
+          method: POST
+  submit_report:
+    handler: src/functions/submit_report/handler.handler
+    events:
+      - httpApi:
+          path: /reports
+          method: POST
+          authorizer: serviceAuthorizer
+  get_all_user_reports:
+    handler: src/functions/get_reports_by_user/handler.handler
+    events:
+      - httpApi:
+          path: /reports
+          method: GET  
+          authorizer: serviceAuthorizer          
+  get_report_by_id:
+    handler: src/functions/get_report_by_id/handler.handler
+    events:
+      - httpApi:
+          path: /reports/{report_id}
+          method: GET
+          authorizer: serviceAuthorizer
+  get_reports_by_address:
+    handler: src/functions/get_reports_by_address/handler.handler
+    events:
+      - httpApi:
+          path: /reports/location
+          method: GET
+          authorizer: serviceAuthorizer        
+resources:
+  Resources:
+    CurbsDynamoDBTable:
+      Type: 'AWS::DynamoDB::Table'
+      Properties:
+        TableName: ${self:custom.CURBS_TABLE_NAME}
+        AttributeDefinitions:
+          - AttributeName: PK
+            AttributeType: S
+          - AttributeName: SK
+            AttributeType: S
+          - AttributeName: GSI1PK
+            AttributeType: S
+          - AttributeName: GSI1SK
+            AttributeType: S                        
+        KeySchema:
+          - AttributeName: PK
+            KeyType: HASH
+          - AttributeName: SK
+            KeyType: RANGE
+        GlobalSecondaryIndexes:
+          - IndexName: GSI1
+            KeySchema:
+              - AttributeName: GSI1PK
+                KeyType: HASH
+              - AttributeName: GSI1SK
+                KeyType: RANGE
+            Projection:
+              ProjectionType: ALL
+            ProvisionedThroughput:
+              ReadCapacityUnits: 1
+              WriteCapacityUnits: 1                   
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
+  Outputs:
+    tableName:
+      Value: ${self:custom.CURBS_TABLE_NAME}
+    tableArn:
+      Value:
+        Fn::GetAtt: [CurbsDynamoDBTable, Arn]
+    usersHttpApiUrl:
+      Value: ${cf:users-dev.HttpApiUrl}

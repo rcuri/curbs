@@ -1,0 +1,98 @@
+service: users
+frameworkVersion: '3.30.1'
+plugins:
+  - serverless-python-requirements
+provider:
+  name: aws
+  stage: ${opt:stage, 'dev'}
+  region: us-east-1
+  versionFunctions: false
+  runtime: python3.8
+  environment:
+    FAVORITES_USER_POOL_ID: 
+      Ref: FavoritesUserPool
+    FAVORITES_USER_POOL_CLIENT_ID: 
+      Ref: CognitoFavoritesPoolClient
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - 'cognito-idp:AdminAddUserToGroup'
+      Resource: 
+        Fn::GetAtt: [FavoritesUserPool, Arn]
+
+custom: 
+  FAVORITES_USER_POOL_NAME: ${self:provider.stage}-${self:service}-favorites-user-pool
+  FAVORITES_USER_POOL_CLIENT: ${self:provider.stage}-${self:service}-favorites-user-pool-client
+functions:
+  sign_up:
+    handler: src/functions/sign_up/handler.handler
+    events:
+      - httpApi:
+          path: /sign_up
+          method: POST
+  sign_in:
+    handler: src/functions/sign_in/handler.handler
+    events:
+      - httpApi:
+          path: /sign_in
+          method: POST   
+  confirm_email:
+    handler: src/functions/confirm_email/handler.handler
+    events:
+      - httpApi:
+          path: /confirm_email
+          method: POST                  
+resources:
+  Resources:                 
+    FavoritesUserPool:
+      Type: AWS::Cognito::UserPool
+      Properties:
+        UserPoolName: ${self:custom.FAVORITES_USER_POOL_NAME}
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 8
+        UsernameAttributes:
+          - email
+        AutoVerifiedAttributes:
+          - email
+        Schema:
+          - AttributeDataType: String
+            Name: email
+            Required: true
+          - AttributeDataType: String
+            Name: first_name
+            Mutable: true
+          - AttributeDataType: String
+            Name: last_name
+            Mutable: true
+    CognitoFavoritesPoolClient:
+      Type: AWS::Cognito::UserPoolClient
+      Properties:
+        UserPoolId: 
+          Ref: FavoritesUserPool
+        ClientName: ${self:custom.FAVORITES_USER_POOL_CLIENT}
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - ALLOW_USER_PASSWORD_AUTH
+          - ALLOW_REFRESH_TOKEN_AUTH
+        TokenValidityUnits:
+          AccessToken: 'minutes'
+          RefreshToken: 'days'
+        RefreshTokenValidity: 1
+        AccessTokenValidity: 10
+  Outputs:
+    favoritesUserPool:
+      Value:
+        Ref: FavoritesUserPool
+    favoritesUserPoolClientArn:
+      Value:
+        Ref: CognitoFavoritesPoolClient
+    userPoolArn:
+      Value:
+        Fn::GetAtt: [FavoritesUserPool, Arn]
+    userPoolProviderName:
+      Value:
+        Fn::GetAtt: [FavoritesUserPool, ProviderName]
+    userPoolProviderURL:
+      Value:
+        Fn::GetAtt: [FavoritesUserPool, ProviderURL]
